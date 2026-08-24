@@ -1,0 +1,217 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAYMENT_SUBMITTED
+  PENDING_VERIFICATION
+  VERIFIED
+  REJECTED
+  EXPIRED
+  COMPLETED
+}
+
+enum LicenseType {
+  PERSONAL
+  COMMERCIAL
+  SINGLE_PROJECT
+  MULTIPLE_PROJECTS
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  passwordHash  String
+  role          Role      @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  orders        Order[]
+  downloads     Download[]
+  notifications Notification[]
+  licenses      License[]
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  createdAt DateTime  @default(now())
+
+  projects  Project[]
+}
+
+model Technology {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  icon      String?
+
+  projects  ProjectTechnology[]
+}
+
+model Project {
+  id                   String    @id @default(cuid())
+  title                String
+  slug                 String    @unique
+  shortDescription     String
+  description          String    @db.Text
+  features             Json?
+  requirements         Json?
+  whatIsIncluded       Json?
+  thumbnail            String?
+  screenshots          Json?
+  demoVideoUrl         String?
+  demoUrl              String?
+  priceInPkr           Int
+  version              String    @default("1.0.0")
+  license              LicenseType @default(SINGLE_PROJECT)
+  published            Boolean   @default(false)
+  featured             Boolean   @default(false)
+  sourceCodePath       String?   // private storage path, never exposed publicly
+  categoryId           String?
+  category             Category? @relation(fields: [categoryId], references: [id])
+  technologies         ProjectTechnology[]
+  installationGuide    InstallationGuide?
+  orders               Order[]
+  downloads            Download[]
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+model ProjectTechnology {
+  projectId    String
+  technologyId String
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  technology   Technology @relation(fields: [technologyId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, technologyId])
+}
+
+model InstallationGuide {
+  id        String   @id @default(cuid())
+  projectId String   @unique
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  content   Json      // structured blocks: headings, paragraphs, code, images
+  privateToPurchasers Boolean @default(true)
+  updatedAt DateTime @updatedAt
+}
+
+model PaymentMethod {
+  id             String   @id @default(cuid())
+  name           String
+  accountHolder  String
+  bankOrWallet   String
+  accountNumber  String
+  iban           String?
+  instructions   String?  @db.Text
+  qrCodeUrl      String?
+  enabled        Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  payments       Payment[]
+}
+
+model Order {
+  id                  String      @id @default(cuid())
+  orderNumber         String      @unique
+  userId              String
+  user                User        @relation(fields: [userId], references: [id])
+  projectId           String
+  project             Project     @relation(fields: [projectId], references: [id])
+  amountPkr           Int
+  status              OrderStatus @default(PENDING_PAYMENT)
+  verificationDeadline DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  payment             Payment?
+  license             License?
+  downloads           Download[]
+}
+
+model Payment {
+  id              String    @id @default(cuid())
+  orderId         String    @unique
+  order           Order     @relation(fields: [orderId], references: [id])
+  paymentMethodId String
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  senderName      String
+  transactionId   String
+  amount          Int
+  paidAt          DateTime
+  screenshotPath  String
+  submittedAt     DateTime  @default(now())
+  verifiedAt      DateTime?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  verifiedByAdminId String?
+}
+
+model License {
+  id          String      @id @default(cuid())
+  licenseCode String      @unique
+  orderId     String      @unique
+  order       Order       @relation(fields: [orderId], references: [id])
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  type        LicenseType @default(SINGLE_PROJECT)
+  createdAt   DateTime    @default(now())
+}
+
+model Download {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id])
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id])
+  ipAddress  String?
+  downloadedAt DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  audience  String   @default("user") // "user" | "admin"
+  type      String
+  title     String
+  message   String   @db.Text
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model AdminLog {
+  id        String   @id @default(cuid())
+  adminId   String
+  action    String
+  targetType String
+  targetId  String
+  meta      Json?
+  createdAt DateTime @default(now())
+}
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  subject   String
+  message   String   @db.Text
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
