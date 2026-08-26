@@ -89,30 +89,22 @@ export function ProjectForm({ existing }: { existing?: ExistingProject }) {
   }, []);
 
   async function handleFileUpload(file: File, type: "thumbnail" | "screenshot" | "video") {
-    const formData = new FormData();
-    formData.append("file", file);
-
     if (type === "thumbnail") setUploadingThumbnail(true);
     if (type === "screenshot") setUploadingScreenshot(true);
     if (type === "video") setUploadingVideo(true);
 
     try {
-      const res = await fetch("/api/admin/projects/upload-media", {
-        method: "POST",
-        body: formData,
+      const { upload } = await import("@vercel/blob/client");
+      const blob = await upload(`projects/${crypto.randomUUID()}-${file.name}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/admin/projects/upload-media",
       });
-      const data = await res.json();
 
-      if (!res.ok) {
-        alert(data.error || "File upload failed.");
-        return;
-      }
-
-      if (type === "thumbnail") setThumbnail(data.url);
-      if (type === "screenshot") setScreenshots((prev) => [...prev, data.url]);
-      if (type === "video") setDemoVideoUrl(data.url);
-    } catch {
-      alert("Network error during file upload.");
+      if (type === "thumbnail") setThumbnail(blob.url);
+      if (type === "screenshot") setScreenshots((prev) => [...prev, blob.url]);
+      if (type === "video") setDemoVideoUrl(blob.url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "File upload failed.");
     } finally {
       if (type === "thumbnail") setUploadingThumbnail(false);
       if (type === "screenshot") setUploadingScreenshot(false);
