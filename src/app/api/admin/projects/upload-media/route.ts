@@ -1,3 +1,4 @@
+// Uses Vercel Blob (connected store) for uploads — redeploy trigger.
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
