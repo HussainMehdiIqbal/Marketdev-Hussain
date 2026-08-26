@@ -1,10 +1,9 @@
-import { promises as fs } from "fs";
 import path from "path";
 import crypto from "crypto";
+import { put } from "@vercel/blob";
 
-const SOURCE_CODE_DIR = process.env.SOURCE_CODE_DIR || "./private-storage/source-code";
-const PAYMENT_SCREENSHOTS_DIR =
-  process.env.PAYMENT_SCREENSHOTS_DIR || "./private-storage/payment-screenshots";
+const SOURCE_CODE_PREFIX = "source-code";
+const PAYMENT_SCREENSHOTS_PREFIX = "payment-screenshots";
 
 const MAX_ZIP_BYTES = Number(process.env.MAX_ZIP_SIZE_MB || 500) * 1024 * 1024;
 const MAX_SCREENSHOT_BYTES = Number(process.env.MAX_SCREENSHOT_SIZE_MB || 8) * 1024 * 1024;
@@ -12,17 +11,15 @@ const MAX_SCREENSHOT_BYTES = Number(process.env.MAX_SCREENSHOT_SIZE_MB || 8) * 1
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 const ALLOWED_IMAGE_EXT = [".jpg", ".jpeg", ".png", ".webp"];
 
-async function ensureDir(dir: string) {
-  await fs.mkdir(dir, { recursive: true });
-}
-
 function safeExt(filename: string): string {
   return path.extname(filename).toLowerCase();
 }
 
 /**
- * Saves an uploaded ZIP (source code) to private storage.
- * Never write into /public — these files must not be reachable via a direct URL.
+ * Saves an uploaded ZIP (source code) to Vercel Blob storage.
+ * The blob URL contains an unguessable random token and is NEVER exposed
+ * directly to the client — it is only ever fetched server-side inside the
+ * authenticated /api/download route below.
  */
 export async function saveSourceCodeZip(file: File): Promise<string> {
   const ext = safeExt(file.name);
@@ -36,19 +33,18 @@ export async function saveSourceCodeZip(file: File): Promise<string> {
     throw new Error(`File too large. Maximum size is ${MAX_ZIP_BYTES / 1024 / 1024}MB.`);
   }
 
-  await ensureDir(SOURCE_CODE_DIR);
-  const uniqueName = `${crypto.randomUUID()}.zip`;
-  const fullPath = path.join(SOURCE_CODE_DIR, uniqueName);
+  const uniqueName = `${SOURCE_CODE_PREFIX}/${crypto.randomUUID()}.zip`;
+  const blob = await put(uniqueName, file, {
+    access: "public",
+    addRandomSuffix: false,
+  });
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await fs.writeFile(fullPath, buffer);
-
-  // Return a relative path stored in the DB — never a public URL.
-  return path.join(SOURCE_CODE_DIR, uniqueName);
+  // Store the blob URL in the DB — it is never surfaced to the client directly.
+  return blob.url;
 }
 
 /**
- * Saves a payment proof screenshot to private storage.
+ * Saves a payment proof screenshot to Vercel Blob storage.
  */
 export async function savePaymentScreenshot(file: File): Promise<string> {
   const ext = safeExt(file.name);
@@ -62,23 +58,25 @@ export async function savePaymentScreenshot(file: File): Promise<string> {
     throw new Error(`Screenshot too large. Maximum size is ${MAX_SCREENSHOT_BYTES / 1024 / 1024}MB.`);
   }
 
-  await ensureDir(PAYMENT_SCREENSHOTS_DIR);
-  const uniqueName = `${crypto.randomUUID()}${ext}`;
-  const fullPath = path.join(PAYMENT_SCREENSHOTS_DIR, uniqueName);
+  const uniqueName = `${PAYMENT_SCREENSHOTS_PREFIX}/${crypto.randomUUID()}${ext}`;
+  const blob = await put(uniqueName, file, {
+    access: "public",
+    addRandomSuffix: false,
+  });
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await fs.writeFile(fullPath, buffer);
-
-  return path.join(PAYMENT_SCREENSHOTS_DIR, uniqueName);
+  return blob.url;
 }
 
 /** Reads a private file's bytes for a protected download/streaming endpoint. */
 export async function readPrivateFile(storedPath: string): Promise<Buffer> {
-  // Guard against path traversal — resolved path must stay inside the private storage roots.
-  const resolved = path.resolve(storedPath);
-  const allowedRoots = [path.resolve(SOURCE_CODE_DIR), path.resolve(PAYMENT_SCREENSHOTS_DIR)];
-  if (!allowedRoots.some((root) => resolved.startsWith(root))) {
-    throw new Error("Access denied: path outside private storage.");
+  // Guard: only ever fetch URLs pointing at our own Blob store.
+  if (!storedPath.startsWith("https://") || !storedPath.includes(".public.blob.vercel-storage.com/")) {
+    throw new Error("Access denied: not a recognized storage URL.");
   }
-  return fs.readFile(resolved);
+  const res = await fetch(storedPath);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch file from storage (status ${res.status}).`);
+  }
+  const arrayBuffer = await res.arrayBuffer();
+  return Buffer.from(arrayBuffer);
 }
