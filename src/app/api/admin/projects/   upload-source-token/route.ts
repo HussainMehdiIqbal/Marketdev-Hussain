@@ -1,8 +1,7 @@
-
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
-import { SOURCE_CODE_ALLOWED_TYPES, PRIVATE_TOKEN, MAX_ZIP_BYTES } from "@/lib/storage";
+import { SOURCE_CODE_ALLOWED_TYPES, MAX_ZIP_BYTES } from "@/lib/storage";
 
 export async function POST(req: Request) {
   const body = (await req.json()) as HandleUploadBody;
@@ -11,7 +10,6 @@ export async function POST(req: Request) {
     const jsonResponse = await handleUpload({
       body,
       request: req,
-      token: PRIVATE_TOKEN,
       onBeforeGenerateToken: async () => {
         const session = await auth();
         if (!session?.user || session.user.role !== "ADMIN") {
