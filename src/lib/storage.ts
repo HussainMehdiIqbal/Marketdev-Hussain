@@ -5,10 +5,6 @@ import { put } from "@vercel/blob";
 const SOURCE_CODE_PREFIX = "source-code";
 const PAYMENT_SCREENSHOTS_PREFIX = "payment-screenshots";
 
-// IMPORTANT: this uses its own dedicated token so these private uploads never
-// accidentally land in the public media store used for thumbnails/videos.
-const PRIVATE_TOKEN = process.env.BLOB_PRIVATE_READ_WRITE_TOKEN;
-
 const MAX_ZIP_BYTES = Number(process.env.MAX_ZIP_SIZE_MB || 500) * 1024 * 1024;
 const MAX_SCREENSHOT_BYTES = Number(process.env.MAX_SCREENSHOT_SIZE_MB || 8) * 1024 * 1024;
 
@@ -20,7 +16,7 @@ function safeExt(filename: string): string {
 }
 
 /**
- * Saves a payment proof screenshot to the PRIVATE Vercel Blob store.
+ * Saves a payment proof screenshot to Vercel Blob storage.
  * Screenshots are small, so this still goes straight through the server.
  */
 export async function savePaymentScreenshot(file: File): Promise<string> {
@@ -39,7 +35,6 @@ export async function savePaymentScreenshot(file: File): Promise<string> {
   const blob = await put(uniqueName, file, {
     access: "public",
     addRandomSuffix: false,
-    token: PRIVATE_TOKEN,
   });
 
   return blob.url;
@@ -47,7 +42,7 @@ export async function savePaymentScreenshot(file: File): Promise<string> {
 
 /** Config shared with the client-direct upload token route for source ZIPs. */
 export const SOURCE_CODE_ALLOWED_TYPES = ["application/zip", "application/x-zip-compressed"];
-export { SOURCE_CODE_PREFIX, PRIVATE_TOKEN, MAX_ZIP_BYTES };
+export { SOURCE_CODE_PREFIX, MAX_ZIP_BYTES };
 
 /** Reads a private file's bytes for a protected download/streaming endpoint. */
 export async function readPrivateFile(storedPath: string): Promise<Buffer> {
