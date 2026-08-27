@@ -5,6 +5,10 @@ import { put } from "@vercel/blob";
 const SOURCE_CODE_PREFIX = "source-code";
 const PAYMENT_SCREENSHOTS_PREFIX = "payment-screenshots";
 
+// IMPORTANT: this uses its own dedicated token so these private uploads never
+// accidentally land in the public media store used for thumbnails/videos.
+const PRIVATE_TOKEN = process.env.BLOB_PRIVATE_READ_WRITE_TOKEN;
+
 const MAX_ZIP_BYTES = Number(process.env.MAX_ZIP_SIZE_MB || 500) * 1024 * 1024;
 const MAX_SCREENSHOT_BYTES = Number(process.env.MAX_SCREENSHOT_SIZE_MB || 8) * 1024 * 1024;
 
@@ -16,35 +20,8 @@ function safeExt(filename: string): string {
 }
 
 /**
- * Saves an uploaded ZIP (source code) to Vercel Blob storage.
- * The blob URL contains an unguessable random token and is NEVER exposed
- * directly to the client — it is only ever fetched server-side inside the
- * authenticated /api/download route below.
- */
-export async function saveSourceCodeZip(file: File): Promise<string> {
-  const ext = safeExt(file.name);
-  if (ext !== ".zip") {
-    throw new Error("Only .zip files are allowed for source code.");
-  }
-  if (file.type && file.type !== "application/zip" && file.type !== "application/x-zip-compressed") {
-    throw new Error("Invalid file type. Expected a ZIP archive.");
-  }
-  if (file.size > MAX_ZIP_BYTES) {
-    throw new Error(`File too large. Maximum size is ${MAX_ZIP_BYTES / 1024 / 1024}MB.`);
-  }
-
-  const uniqueName = `${SOURCE_CODE_PREFIX}/${crypto.randomUUID()}.zip`;
-  const blob = await put(uniqueName, file, {
-    access: "public",
-    addRandomSuffix: false,
-  });
-
-  // Store the blob URL in the DB — it is never surfaced to the client directly.
-  return blob.url;
-}
-
-/**
- * Saves a payment proof screenshot to Vercel Blob storage.
+ * Saves a payment proof screenshot to the PRIVATE Vercel Blob store.
+ * Screenshots are small, so this still goes straight through the server.
  */
 export async function savePaymentScreenshot(file: File): Promise<string> {
   const ext = safeExt(file.name);
@@ -62,15 +39,20 @@ export async function savePaymentScreenshot(file: File): Promise<string> {
   const blob = await put(uniqueName, file, {
     access: "public",
     addRandomSuffix: false,
+    token: PRIVATE_TOKEN,
   });
 
   return blob.url;
 }
 
+/** Config shared with the client-direct upload token route for source ZIPs. */
+export const SOURCE_CODE_ALLOWED_TYPES = ["application/zip", "application/x-zip-compressed"];
+export { SOURCE_CODE_PREFIX, PRIVATE_TOKEN, MAX_ZIP_BYTES };
+
 /** Reads a private file's bytes for a protected download/streaming endpoint. */
 export async function readPrivateFile(storedPath: string): Promise<Buffer> {
   // Guard: only ever fetch URLs pointing at our own Blob store.
-  if (!storedPath.startsWith("https://") || !storedPath.includes(".public.blob.vercel-storage.com/")) {
+  if (!storedPath.startsWith("https://") || !storedPath.includes(".blob.vercel-storage.com/")) {
     throw new Error("Access denied: not a recognized storage URL.");
   }
   const res = await fetch(storedPath);
