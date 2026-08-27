@@ -225,7 +225,7 @@ export function ProjectForm({ existing }: { existing?: ExistingProject }) {
       const { upload } = await import("@vercel/blob/client");
       const blob = await upload(`source-code/${crypto.randomUUID()}-${zipFile.name}`, zipFile, {
         access: "public",
-        handleUploadUrl: "/api/admin/projects/upload-source-token",
+        handleUploadUrl: "/api/admin/source-upload-token",
       });
 
       const res = await fetch(`/api/admin/projects/${projectId}/upload-source`, {
